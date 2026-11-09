@@ -121,3 +121,19 @@ def test_failed_api_channels_are_not_retried_on_every_question():
     for _ in range(3):
         assert index.search("гарантия П-17/2024")
     assert calls == {"embed": 2, "rerank": 1}
+
+
+def test_query_vector_of_wrong_size_falls_back_to_lexical():
+    def mismatched(texts):
+        vectors = _keyword_embedder(texts)
+        return vectors if len(texts) > 1 else np.ones((1, 7), dtype=np.float32)
+
+    index = Index(DOCS, embed=mismatched)
+    assert index.context("гарантия по договору ПТ-05/2023")[0].doc.title.startswith("Договор поставки ПТ-05")
+    assert index.vectors is None
+
+
+def test_duplicate_reranker_indices_do_not_duplicate_chunks():
+    index = Index(DOCS, rerank=lambda query, documents, top_n: [(0, 0.9), (0, 0.8), (1, 0.7)])
+    ids = [chunk.chunk_id for chunk, _ in index.search("гарантия")]
+    assert len(ids) == len(set(ids))

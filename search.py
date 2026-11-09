@@ -96,7 +96,7 @@ class Index:
         if self.vectors is None:
             return []
         try:
-            query_vector = self.embed([query])[0]
+            scores = self.vectors @ self.embed([query])[0]
         except Exception as exc:
             # A failing channel is switched off after the first error: retrying it on every
             # question would spend the whole 20-minute budget on timeouts.
@@ -104,7 +104,6 @@ class Index:
             _warn("query embedding", exc)
             self.vectors = None
             return []
-        scores = self.vectors @ query_vector
         return [int(i) for i in scores.argsort()[::-1][:CHANNEL_CANDIDATES]]
 
     def _reranked(self, query: str, fused: list[tuple[int, float]]) -> list[tuple[int, float]]:
@@ -119,8 +118,12 @@ class Index:
             return fused
         if not order:
             return fused
-        ranked = [(candidates[position][0], score) for position, score in order]
-        seen = {i for i, _ in ranked}
+        ranked, seen = [], set()
+        for position, score in order:
+            index = candidates[position][0]
+            if index not in seen:
+                seen.add(index)
+                ranked.append((index, score))
         return ranked + [pair for pair in fused if pair[0] not in seen]
 
     def search(self, query: str, top_k: int = TOP_CHUNKS) -> list[tuple[Chunk, float]]:
