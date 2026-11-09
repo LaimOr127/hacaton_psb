@@ -2,6 +2,7 @@
 
 import re
 
+import dates
 from dialog import Turn, current_message
 from search import Block
 
@@ -12,7 +13,7 @@ SYSTEM = """Ты — ассистент юридического отдела к
 2. Каждое юридически значимое утверждение подтверждай ссылкой: «(п. 3.1)» после названного договора с номером и контрагентом или «Источник: ТК РФ, ст. 70». Ссылайся только на пункты и статьи, которые есть в тексте документов. Числа, суммы, сроки и даты переноси из документов без изменений.
 3. Если ответа в документах нет, так и скажи: «В базе знаний нет документов о …» — и не отвечай по памяти. Если данных хватает на часть ответа, ответь на эту часть и назови, чего не хватает.
 4. Если вопрос содержит неверную посылку (сумма, срок или факт расходятся с документами), укажи на расхождение и приведи данные из документа со ссылкой. Не подстраивайся под формулировку вопроса.
-5. Учитывай дату события. Для документов компании применяй редакцию, действовавшую на эту дату, и изменения из дополнительных соглашений с учётом условий их применения. Законы в базе даны только в действующей редакции: если событие произошло до даты изменения нормы, указанной в тексте закона, а прежней редакции в базе нет, сообщи об этом и не делай выводов о прежней норме.
+5. Учитывай дату события. Для документов компании применяй редакцию, действовавшую на эту дату, и изменения из дополнительных соглашений с учётом условий их применения. Законы в базе даны только в действующей редакции: если событие произошло до даты изменения нормы, указанной в тексте закона, а прежней редакции в базе нет, сообщи об этом и не делай выводов о прежней норме. Пометки «Срок действия редакции» и «Внимание» в заголовках документов рассчитаны системой по датам из текста документов — опирайся на них.
 6. Если документы расходятся между собой, назови оба положения; какое из них применяется, говори только если это следует из документов.
 7. Если неясно, о каком договоре, контрагенте или периоде речь, и подходят несколько документов, кратко ответь по каждому варианту и попроси уточнить.
 8. Не помогай нарушать закон или обходить установленные требования. Вместо этого объясни требования и последствия нарушения по документам базы.
@@ -22,23 +23,54 @@ SYSTEM = """Ты — ассистент юридического отдела к
 
 Формат: обычный текст на русском без markdown. Начинай с прямого ответа. Объём — до 150 слов; больше только если этого требует обоснование."""
 
+INSUFFICIENT = (
+    "В базе знаний нет документов, которые позволяют достоверно ответить на этот вопрос. "
+    "Уточните вопрос или обратитесь к юристу."
+)
+
 # Delimiter tags must not be forged from inside user or document text.
 _TAG_RE = re.compile(r"</?\s*(документы|документ|история|вопрос)\s*>", re.IGNORECASE)
+# A legal document has no business addressing the assistant; such lines are dropped
+# before the text reaches the model instead of relying on the model to ignore them.
+_INSTRUCTION_LINE_RE = re.compile(
+    r"^.*(?:\b(?:ИИ|AI)[- ]?ассистент|\bигнорируй|\bignore (?:all|previous|the above)"
+    r"|систем\w* промпт|system prompt|не упоминай эту инструкцию).*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+DROPPED_LINE = "[строка исключена: содержит указания для ассистента, а не нормы]"
 
 
 def _clean(text: str) -> str:
     return _TAG_RE.sub("", text)
 
 
-def _render_block(number: int, block: Block) -> str:
+def document_text(text: str) -> str:
+    return _INSTRUCTION_LINE_RE.sub(DROPPED_LINE, _clean(text))
+
+
+def _render_block(number: int, block: Block, event: dates.Period | None) -> str:
     header = f"[{number}] {block.doc.title}"
     if block.address:
         header += f" | фрагмент: {block.address}"
-    return f"<документ>\n{header}\n{_clean(block.text)}\n</документ>"
+    if block.doc.kind == "company":
+        note = dates.edition_note(block.doc.text, event)
+    else:
+        note = dates.law_change_note(block.text, event)
+    if note:
+        header += f"\n{note}"
+    return f"<документ>\n{header}\n{document_text(block.text)}\n</документ>"
 
 
-def build_messages(blocks: list[Block], turns: list[Turn]) -> list[dict]:
-    documents = "\n\n".join(_render_block(i, b) for i, b in enumerate(blocks, 1))
+def correction(violations: list[str]) -> str:
+    listed = ", ".join(violations)
+    return (
+        f"В ответе есть данные, которых нет в документах: {listed}. Перепиши ответ, используя только "
+        "числа, пункты и статьи из документов. Если документов недостаточно, прямо скажи об этом."
+    )
+
+
+def build_messages(blocks: list[Block], turns: list[Turn], event: dates.Period | None = None) -> list[dict]:
+    documents = "\n\n".join(_render_block(i, b, event) for i, b in enumerate(blocks, 1))
     question = current_message(turns)
     labels = {"user": "Пользователь", "assistant": "Ассистент"}
     history = "\n".join(f"{labels[t.role]}: {_clean(t.text)}" for t in turns[:-1])
