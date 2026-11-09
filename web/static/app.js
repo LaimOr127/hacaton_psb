@@ -11,6 +11,7 @@ const EXAMPLES = [
 
 const history = [];
 const documentCache = new Map();
+let documentRequest = 0;
 const $ = (id) => document.getElementById(id);
 
 function element(tag, className, text) {
@@ -70,7 +71,8 @@ async function ask(text) {
   const question = text.trim();
   if (!question) return;
   $("examples").hidden = true;
-  history.push({ role: "user", text: question });
+  // History changes only after a valid answer: a failed request leaves nothing to undo.
+  const messages = [...history, { role: "user", text: question }].slice(-20);
   renderUser(question);
   const pending = element("div", "message assistant pending", "Ищу ответ в документах…");
   $("messages").append(pending);
@@ -80,20 +82,19 @@ async function ask(text) {
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: history.slice(-20) }),
+      body: JSON.stringify({ messages }),
     });
     const data = await response.json().catch(() => ({}));
     pending.remove();
-    if (!response.ok) {
-      history.pop();
+    const valid = typeof data.answer === "string" && data.answer && Array.isArray(data.sources);
+    if (!response.ok || !valid) {
       renderError(typeof data.detail === "string" ? data.detail : "Не удалось получить ответ. Повторите запрос.");
       return;
     }
-    history.push({ role: "assistant", text: data.answer });
+    history.push(messages.at(-1), { role: "assistant", text: data.answer });
     renderAnswer(data);
   } catch {
     pending.remove();
-    history.pop();
     renderError("Сервер недоступен. Проверьте подключение и повторите запрос.");
   } finally {
     setBusy(false);
@@ -118,13 +119,17 @@ async function loadDocument(docId) {
 
 async function openDocument(docId, chunkIds) {
   const view = $("document");
+  const request = ++documentRequest;
   let doc;
   try {
     doc = await loadDocument(docId);
   } catch {
-    view.replaceChildren(element("p", "placeholder", "Не удалось загрузить документ."));
+    if (request === documentRequest) {
+      view.replaceChildren(element("p", "placeholder", "Не удалось загрузить документ."));
+    }
     return;
   }
+  if (request !== documentRequest) return; // a later click wins
   $("doc-select").value = docId;
   const marked = doc.chunks.filter((c) => chunkIds.includes(c.chunk_id)).sort((a, b) => a.start - b.start);
   const body = element("div", "doc-text");
@@ -147,7 +152,8 @@ async function openDocument(docId, chunkIds) {
 async function loadDocumentList() {
   try {
     const response = await fetch("/api/documents");
-    const docs = await response.json();
+    const docs = response.ok ? await response.json() : [];
+    if (!Array.isArray(docs)) return;
     const select = $("doc-select");
     const groups = { company: element("optgroup"), law: element("optgroup") };
     groups.company.label = "Документы компании";

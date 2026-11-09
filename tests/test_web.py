@@ -22,7 +22,7 @@ def client(monkeypatch):
         return Answer("Плата 450 000 рублей по договору № А-08/2024 (п. 3.1).", [Block(CONTRACT, CONTRACT.text, "")])
 
     monkeypatch.setattr(web, "answer", fake_answer)
-    with TestClient(web.create_app(Index([CONTRACT]))) as test_client:
+    with TestClient(web.create_app(Index([CONTRACT]), allowed_hosts=["testserver"])) as test_client:
         test_client.questions = seen
         yield test_client
 
@@ -94,3 +94,12 @@ def test_security_headers_and_no_api_docs(client):
     assert response.headers["x-content-type-options"] == "nosniff"
     assert client.get("/docs").status_code == 404
     assert client.get("/openapi.json").status_code == 404
+
+
+def test_long_earlier_answer_does_not_block_the_dialog(client):
+    response = _chat(client, ("user", "Плата?"), ("assistant", "ответ " * 1500), ("user", "А срок?"))
+    assert response.status_code == 200
+
+
+def test_foreign_host_header_is_rejected(client):
+    assert client.get("/api/documents", headers={"Host": "attacker.example"}).status_code == 400

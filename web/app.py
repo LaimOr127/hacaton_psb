@@ -14,6 +14,7 @@ from threading import Lock
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
@@ -21,12 +22,12 @@ from pydantic import BaseModel, Field, model_validator
 import config
 import kb
 import llm
-from answer import answer
+from answer import MAX_ANSWER_CHARS, answer
 from citations import sources
 from search import Index
 
 STATIC_DIR = Path(__file__).parent / "static"
-MAX_MESSAGE_CHARS = 4000
+MAX_QUESTION_CHARS = 4000
 MAX_MESSAGES = 20
 RATE_LIMIT = 20
 RATE_WINDOW_SECONDS = 60
@@ -46,7 +47,14 @@ SECURITY_HEADERS = {
 
 class Message(BaseModel):
     role: Literal["user", "assistant"]
-    text: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
+    # Assistant turns echo earlier answers, which may be longer than a question.
+    text: str = Field(min_length=1, max_length=MAX_ANSWER_CHARS)
+
+    @model_validator(mode="after")
+    def question_size(self) -> "Message":
+        if self.role == "user" and len(self.text) > MAX_QUESTION_CHARS:
+            raise ValueError(f"a question is limited to {MAX_QUESTION_CHARS} characters")
+        return self
 
 
 class ChatRequest(BaseModel):
@@ -100,7 +108,7 @@ def build_index() -> Index:
     )
 
 
-def create_app(index: Index | None = None) -> FastAPI:
+def create_app(index: Index | None = None, allowed_hosts: list[str] | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.index = index or build_index()
@@ -108,6 +116,7 @@ def create_app(index: Index | None = None) -> FastAPI:
 
     app = FastAPI(title="Юридический ассистент", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.limiter = RateLimiter(RATE_LIMIT, RATE_WINDOW_SECONDS)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts or config.ALLOWED_HOSTS)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.middleware("http")
