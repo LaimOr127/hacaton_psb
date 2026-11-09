@@ -11,3 +11,7 @@ data/raw/sample/
 
 # Case brief is distributed to participants only
 *.pdf
+
+# Local run inputs copied from data/raw
+data/questions.csv
+data/knowledge-base.zip
