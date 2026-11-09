@@ -196,6 +196,11 @@ Dockerfile  compose.yaml  .dockerignore  .env.example  requirements.txt  README.
   - ограничения;
   - внешние API и подключение ключа.
 - **Готово:** чистый клон + `.env` → `docker compose up` → рабочий чат; архив сабмита собирается одной командой.
+- **Сделано:** образ `python:3.12-slim` без root с health check; compose — только loopback, файловая
+  система только для чтения, без capabilities. Проверено из чистого клона: контейнер `healthy`,
+  чат через заглушку API отвечает со ссылкой на пункт, чужой `Host` — 400. `pip-audit` — уязвимостей
+  нет. `/ponytail-audit` — удалены неиспользуемые поле `Document.name` и оценки в `Index.search`.
+  `/ponytail-review` перед PR этапов 1–4 не запускался; его роль закрыл итоговый аудит.
 
 ### Этап 6. Презентация
 - **Первый слайд:**

@@ -82,13 +82,13 @@ def test_reranker_order_is_applied():
         return [(i, 1.0 - n / 10) for n, i in enumerate(order)][:top_n]
 
     index = Index(DOCS, rerank=prefer_rent)
-    assert "аренды" in index.search("гарантия П-17/2024")[0][0].text.lower()
+    assert "аренды" in index.search("гарантия П-17/2024")[0].text.lower()
 
 
 def test_reranker_failure_keeps_fused_order():
     plain = Index(DOCS).search("гарантия П-17/2024")
     broken = Index(DOCS, rerank=_failing).search("гарантия П-17/2024")
-    assert [c.chunk_id for c, _ in broken] == [c.chunk_id for c, _ in plain]
+    assert [c.chunk_id for c in broken] == [c.chunk_id for c in plain]
 
 
 def test_related_document_is_placed_next_to_its_contract():
@@ -135,7 +135,7 @@ def test_query_vector_of_wrong_size_falls_back_to_lexical():
 
 def test_duplicate_reranker_indices_do_not_duplicate_chunks():
     index = Index(DOCS, rerank=lambda query, documents, top_n: [(0, 0.9), (0, 0.8), (1, 0.7)])
-    ids = [chunk.chunk_id for chunk, _ in index.search("гарантия")]
+    ids = [chunk.chunk_id for chunk in index.search("гарантия")]
     assert len(ids) == len(set(ids))
 
 

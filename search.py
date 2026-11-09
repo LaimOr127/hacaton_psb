@@ -20,7 +20,6 @@ from kb import Chunk, Document
 Embedder = Callable[[list[str]], np.ndarray]
 Reranker = Callable[[str, list[str], int], list[tuple[int, float]]]
 
-TOP_CHUNKS = 12
 MAX_BLOCKS = 12
 OUTLINE_ADDRESS = "оглавление статьи: начало каждого пункта"
 CHANNEL_CANDIDATES = 40
@@ -151,11 +150,11 @@ class Index:
                 ranked.append((index, score))
         return ranked + [pair for pair in fused if pair[0] not in seen]
 
-    def search(self, query: str, top_k: int = TOP_CHUNKS) -> list[tuple[Chunk, float]]:
+    def search(self, query: str, top_k: int = RERANK_CANDIDATES) -> list[Chunk]:
         query = expand_query(query)
         rankings = [ranking for ranking in (self._lexical(query), self._dense(query)) if ranking]
         ordered = self._reranked(query, rrf(rankings))
-        return [(self.chunks[i], score) for i, score in ordered[:top_k]]
+        return [self.chunks[i] for i, _ in ordered[:top_k]]
 
     def context(self, query: str) -> list[Block]:
         blocks: dict[str, Block] = {}
@@ -185,9 +184,9 @@ class Index:
                 for related in self.links.get(doc.doc_id, []):
                     add(self.documents[related])
 
-        # Candidates go deeper than TOP_CHUNKS: when the question names a contract, its clauses
-        # would otherwise take every slot although the contract is already included whole.
-        for chunk, _ in self.search(query, top_k=RERANK_CANDIDATES):
+        # Candidates go deep: when the question names a contract, its clauses would otherwise
+        # take every slot although the contract is already included whole.
+        for chunk in self.search(query):
             if len(blocks) >= MAX_BLOCKS:
                 break
             add(self.documents[chunk.doc_id], chunk)
