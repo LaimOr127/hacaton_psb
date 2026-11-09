@@ -15,3 +15,6 @@ data/raw/sample/
 # Local run inputs copied from data/raw
 data/questions.csv
 data/knowledge-base.zip
+
+# Local evaluation runs
+eval/results/

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import config
 import kb
+import llm
 from answer import FALLBACK, answer
 from search import Index
 
@@ -61,8 +62,9 @@ def main() -> None:
     answers: dict[str, str] = {}
     write_submission(ids, answers)
 
-    index = Index(kb.load_zip(find_file(*KB_NAMES)))
-    print(f"questions={len(questions)} chunks={len(index.chunks)}", flush=True)
+    index = Index(kb.load_zip(find_file(*KB_NAMES)), embed=llm.embed, rerank=llm.rerank)
+    dense = "on" if index.vectors is not None else "off"
+    print(f"questions={len(questions)} chunks={len(index.chunks)} dense={dense}", flush=True)
 
     def work(qid: str, question: str) -> tuple[str, str]:
         if time.monotonic() > deadline:
