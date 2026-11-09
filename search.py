@@ -5,6 +5,7 @@ then optionally reordered by the reranker. Dense search and reranking depend on 
 API: when it fails, retrieval continues with what is left instead of failing the run.
 """
 
+import re
 import sys
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -20,6 +21,8 @@ Embedder = Callable[[list[str]], np.ndarray]
 Reranker = Callable[[str, list[str], int], list[tuple[int, float]]]
 
 TOP_CHUNKS = 12
+MAX_BLOCKS = 12
+OUTLINE_ADDRESS = "оглавление статьи: начало каждого пункта"
 CHANNEL_CANDIDATES = 40
 RERANK_CANDIDATES = 24
 RRF_K = 60
@@ -41,8 +44,30 @@ class Block:
     hits: list[str] = field(default_factory=list)  # chunk ids that matched the query
 
 
+# Laws spell taxes and terms out in full ("налог на добавленную стоимость"), users abbreviate.
+# ponytail: fixed table of common legal abbreviations; extend it when eval shows a miss
+ABBREVIATIONS = {
+    "ндс": "налог на добавленную стоимость",
+    "ндфл": "налог на доходы физических лиц",
+    "пдн": "персональные данные",
+    "мрот": "минимальный размер оплаты труда",
+    "дс": "дополнительное соглашение",
+    "тк": "трудовой кодекс",
+    "нк": "налоговый кодекс",
+    "гк": "гражданский кодекс",
+    "коап": "кодекс об административных правонарушениях",
+}
+_WORD_RE = re.compile(r"[а-яёa-z]+", re.IGNORECASE)
+
+
 def _normalize(text: str) -> str:
     return text.lower().replace("ё", "е")
+
+
+def expand_query(query: str) -> str:
+    words = {w.lower() for w in _WORD_RE.findall(query)}
+    expansions = [full for short, full in ABBREVIATIONS.items() if short in words]
+    return " ".join([query, *expansions])
 
 
 def _warn(stage: str, exc: Exception) -> None:
@@ -127,6 +152,7 @@ class Index:
         return ranked + [pair for pair in fused if pair[0] not in seen]
 
     def search(self, query: str, top_k: int = TOP_CHUNKS) -> list[tuple[Chunk, float]]:
+        query = expand_query(query)
         rankings = [ranking for ranking in (self._lexical(query), self._dense(query)) if ranking]
         ordered = self._reranked(query, rrf(rankings))
         return [(self.chunks[i], score) for i, score in ordered[:top_k]]
@@ -145,6 +171,10 @@ class Index:
                 if chunk:
                     blocks[key].hits.append(chunk.chunk_id)
                 return
+            outline_key = f"{doc.doc_id}#outline"
+            if not whole and doc.outline and outline_key not in blocks and len(doc.outline) <= remaining:
+                remaining -= len(doc.outline)
+                blocks[outline_key] = Block(doc, doc.outline, OUTLINE_ADDRESS)
             text = doc.text if whole else chunk.text
             if len(text) > remaining:
                 return
@@ -155,6 +185,10 @@ class Index:
                 for related in self.links.get(doc.doc_id, []):
                     add(self.documents[related])
 
-        for chunk, _ in self.search(query):
+        # Candidates go deeper than TOP_CHUNKS: when the question names a contract, its clauses
+        # would otherwise take every slot although the contract is already included whole.
+        for chunk, _ in self.search(query, top_k=RERANK_CANDIDATES):
+            if len(blocks) >= MAX_BLOCKS:
+                break
             add(self.documents[chunk.doc_id], chunk)
         return list(blocks.values())

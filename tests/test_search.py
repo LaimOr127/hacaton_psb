@@ -1,7 +1,7 @@
 import numpy as np
 
 import kb
-from search import Index, rrf
+from search import Index, expand_query, rrf
 
 
 def _doc(name: str, text: str) -> kb.Document:
@@ -137,3 +137,33 @@ def test_duplicate_reranker_indices_do_not_duplicate_chunks():
     index = Index(DOCS, rerank=lambda query, documents, top_n: [(0, 0.9), (0, 0.8), (1, 0.7)])
     ids = [chunk.chunk_id for chunk, _ in index.search("гарантия")]
     assert len(ids) == len(set(ids))
+
+
+def test_abbreviation_is_expanded_to_the_wording_laws_use():
+    assert "налог на добавленную стоимость" in expand_query("Какая ставка НДС?")
+    assert expand_query("Какая ставка?") == "Какая ставка?"
+
+
+def test_named_contract_does_not_crowd_out_other_sources():
+    clauses = "".join(f"{i}.1. Ставка НДС по договору П-17/2024, условие {i}.\n" for i in range(1, 16))
+    contract = kb.parse_document("документы__Договор П-17.txt", "ДОГОВОР ПОСТАВКИ № П-17/2024\n" + clauses)
+    law = kb.parse_document(
+        "законы__НК_ст164.txt",
+        "Источник: Статья 164. НК РФ Налоговые ставки\n\nСтатья 164. Налоговые ставки\n\n"
+        "3. Налогообложение по ставке 22 процента.\n",
+    )
+    blocks = Index([contract, law]).context("Какую ставку НДС применять по договору П-17/2024?")
+    assert {b.doc.doc_id for b in blocks} == {contract.doc_id, law.doc_id}
+
+
+def test_long_law_fragment_comes_with_article_outline():
+    points = "".join(f"{i}. Пункт {i} о ставке {i} процентов при реализации товаров.\n\n" for i in range(1, 4))
+    filler = "".join(f"{i}) подпункт про экспорт и перевозки, длинный текст. " * 20 + "\n\n" for i in range(1, 12))
+    law = kb.parse_document(
+        "законы__НК_ст164.txt",
+        "Источник: Статья 164. НК РФ Налоговые ставки\n\nСтатья 164. Налоговые ставки\n\n" + points + filler,
+    )
+    assert len(law.text) > 6000 and law.outline.startswith("1. Пункт 1")
+    blocks = Index([law]).context("экспорт перевозки подпункт")
+    assert blocks[0].text == law.outline
+    assert all(b.text != law.text for b in blocks)
