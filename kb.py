@@ -16,6 +16,8 @@ from xml.etree import ElementTree
 SUPPORTED_SUFFIXES = {".txt", ".md", ".docx"}
 MAX_CHUNK_CHARS = 1500
 SUBPOINT_SPLIT_CHARS = 800
+OUTLINE_LINE_CHARS = 220
+MAX_OUTLINE_CHARS = 2500
 
 # "3.2. Товар ..." in contracts; "1. Налоговая ставка ..." or "2.1) услуг ..." in laws.
 CLAUSE_RE = re.compile(r"^(\d+(?:\.\d+)+)\.?\s+\S")
@@ -44,6 +46,7 @@ class Document:
     kind: str  # "law" | "company"
     text: str
     chunks: list[Chunk] = field(default_factory=list)
+    outline: str = ""  # laws only: first sentence of every top-level point
 
 
 def load_zip(path) -> list[Document]:
@@ -81,6 +84,7 @@ def parse_document(name: str, text: str) -> Document:
     if is_law:
         doc = Document(doc_id, name, _law_title(text, name), "law", text)
         doc.chunks = _chunk(doc, _law_units(text, _article(text)))
+        doc.outline = _outline(text)
     else:
         doc = Document(doc_id, name, _file_title(name), "company", text)
         doc.chunks = _chunk(doc, _company_units(text))
@@ -115,6 +119,20 @@ def _law_title(text: str, name: str) -> str:
     return f"{title}. {heading.group(1).strip()}" if heading else title
 
 
+def _outline(text: str) -> str:
+    """A retrieved fragment of a long article loses the article's general rules: the 22% VAT
+    rate lives in a one-line point 3 that matches almost no question wording."""
+    lines = []
+    for line in text.split("\n"):
+        line = line.strip()
+        if SECTION_RE.match(line):
+            lines.append(
+                line if len(line) <= OUTLINE_LINE_CHARS else line[:OUTLINE_LINE_CHARS].rsplit(" ", 1)[0] + " …"
+            )
+    outline = "\n".join(lines)
+    return outline if len(outline) <= MAX_OUTLINE_CHARS else outline[:MAX_OUTLINE_CHARS].rsplit("\n", 1)[0]
+
+
 def _paragraphs(text: str) -> list[tuple[int, int]]:
     """(start, end) spans of non-empty lines."""
     spans = []
@@ -126,7 +144,9 @@ def _paragraphs(text: str) -> list[tuple[int, int]]:
 
 NOTE_RE = re.compile(
     r"^(?:(?:Пункт|Подпункт|Часть|Статья|Абзац|Наименование)\w*\b.*\b(?:изменен|дополнен|утратил|признан|введен|изложен)"
-    r"|Федеральным законом|О .+ см\.|См\.|Информация об изменениях)"
+    r"|Федеральным законом|О .+ см\.|См\.|Информация об изменениях"
+    # Transitional notes: "Положения пункта 3 (в редакции Федерального закона от ...) применяются ..."
+    r"|Положения [^(\n]{0,80}\(в редакции)"
 )
 
 # Unit kinds: "unit" starts a structural unit; "prefix" (heading, service note) is glued

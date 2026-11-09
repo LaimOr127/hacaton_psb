@@ -17,6 +17,9 @@ OUTPUT = Path("submission.csv")
 KB_NAMES = ("knowledge-base.zip", "knowledge_base.zip", "kb.zip")
 TIMEOUT_ANSWER = "Не удалось сформировать ответ по базе знаний в отведённое время. Повторите запрос."
 SAVE_EVERY = 10
+# A retry doubles the worst-case time of a question; near the budget it is skipped so
+# questions still in flight finish before the platform kills the run at 20 minutes.
+RETRY_RESERVE_SECONDS = 180
 
 
 def find_file(*names: str) -> Path:
@@ -72,7 +75,8 @@ def main() -> None:
         if not question:
             return qid, "Вопрос не задан. Сформулируйте вопрос по документам базы знаний."
         try:
-            return qid, answer(index, question).text
+            allow_retry = time.monotonic() < deadline - RETRY_RESERVE_SECONDS
+            return qid, answer(index, question, allow_retry=allow_retry).text
         except Exception as exc:  # one bad question must not lose the whole run
             print(f"question {qid}: {type(exc).__name__}", file=sys.stderr)
             return qid, FALLBACK

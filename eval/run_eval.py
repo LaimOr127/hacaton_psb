@@ -18,10 +18,10 @@ from datetime import datetime
 from pathlib import Path
 
 import config
-import dialog
+import guard
 import kb
 import llm
-from answer import answer
+from answer import answer, prepare
 from search import Index
 
 ROOT = Path(__file__).resolve().parent
@@ -46,14 +46,14 @@ def load_cases(path: Path) -> list[dict]:
 
 
 def retrieval_metrics(index: Index, case: dict) -> dict:
+    """covered: every number and reference of the golden answer is present in what the model sees."""
     expected = [e for e in case["expected_docs"].split(";") if e]
-    blocks = index.context(dialog.search_query(dialog.parse(case["question"])))
+    blocks, messages = prepare(index, case["question"])
     titles = [b.doc.title for b in blocks]
-    if not expected:
-        return {"hit1": None, "recall": None, "context_chars": sum(len(b.text) for b in blocks)}
     return {
-        "hit1": any(e in titles[0] for e in expected) if titles else False,
-        "recall": all(any(e in t for t in titles) for e in expected),
+        "hit1": (any(e in titles[0] for e in expected) if titles else False) if expected else None,
+        "recall": all(any(e in t for t in titles) for e in expected) if expected else None,
+        "covered": not guard.check(case["golden"], messages[-1]["content"]),
         "context_chars": sum(len(b.text) for b in blocks),
     }
 
@@ -72,12 +72,19 @@ def judge(question: str, golden: str, candidate: str) -> tuple[float | None, str
 def answer_metrics(index: Index, case: dict) -> dict:
     started = time.monotonic()
     try:
-        text = answer(index, case["question"]).text
-    except llm.LLMError as exc:
-        return {"answer": "", "seconds": time.monotonic() - started, "score": None, "reason": str(exc)}
+        result = answer(index, case["question"])
+    except Exception as exc:  # one broken case must not abort the run
+        return {"answer": "", "seconds": time.monotonic() - started, "score": None, "reason": type(exc).__name__}
     seconds = time.monotonic() - started
-    score, reason = judge(case["question"], case["golden"], text)
-    return {"answer": text, "seconds": seconds, "score": score, "reason": reason}
+    score, reason = judge(case["question"], case["golden"], result.text)
+    return {
+        "answer": result.text,
+        "seconds": seconds,
+        "retried": result.retried,
+        "dropped": ";".join(result.dropped),
+        "score": score,
+        "reason": reason,
+    }
 
 
 def _mean(values: list) -> str:
@@ -88,12 +95,17 @@ def _mean(values: list) -> str:
 def summarize(rows: list[dict], with_answers: bool) -> None:
     print(f"hit@1:          {_mean([r['hit1'] for r in rows])}")
     print(f"recall:         {_mean([r['recall'] for r in rows])}")
+    print(f"golden covered: {_mean([r['covered'] for r in rows])}")
     print(f"context chars:  {_mean([r['context_chars'] for r in rows])}")
     if not with_answers:
         return
     seconds = [r["seconds"] for r in rows]
     print(f"judge score:    {_mean([r['score'] for r in rows])}")
+    for category in sorted({r["category"] for r in rows}):
+        print(f"  {category:14} {_mean([r['score'] for r in rows if r['category'] == category])}")
     print(f"zero scores:    {sum(1 for r in rows if r['score'] == 0.0)}")
+    print(f"retried:        {sum(1 for r in rows if r.get('retried'))}")
+    print(f"facts dropped:  {sum(1 for r in rows if r.get('dropped'))}")
     print(f"latency p50/max: {statistics.median(seconds):.1f}s / {max(seconds):.1f}s")
     projected = statistics.mean(seconds) * PLATFORM_QUESTIONS / config.MAX_WORKERS
     print(f"projected {PLATFORM_QUESTIONS} questions at {config.MAX_WORKERS} workers: {projected / 60:.1f} min")
@@ -126,7 +138,7 @@ def main() -> None:
 
     for row in rows:
         score = "" if row.get("score") is None else f" score={row['score']}"
-        print(f"{row['id']:>10} hit1={row['hit1']} recall={row['recall']}{score}")
+        print(f"{row['id']:>15} hit1={row['hit1']} recall={row['recall']} covered={row['covered']}{score}")
     summarize(rows, args.answers)
 
     out = ROOT / "results" / f"{datetime.now():%Y%m%d-%H%M%S}.csv"
