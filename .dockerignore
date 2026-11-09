@@ -2,6 +2,8 @@
 .gitignore
 .venv
 .env
+.env.*
+!.env.example
 .claude
 **/__pycache__
 .pytest_cache
