@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Юридический ассистент</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Юридический ассистент</h1>
+      <p>Отвечает только по базе документов и ссылается на пункты. Если данных нет, говорит об этом.</p>
+    </div>
+    <button type="button" id="reset" class="ghost">Новый диалог</button>
+  </header>
+  <main class="layout">
+    <section class="chat" aria-label="Диалог">
+      <div id="messages" class="messages" aria-live="polite"></div>
+      <div id="examples" class="examples" aria-label="Примеры вопросов"></div>
+      <form id="composer" class="composer">
+        <label for="input" class="visually-hidden">Вопрос</label>
+        <textarea id="input" rows="2" maxlength="4000" required
+          placeholder="Вопрос по договорам, регламентам или законам. Enter — отправить, Shift+Enter — новая строка"></textarea>
+        <button type="submit" id="send">Спросить</button>
+      </form>
+    </section>
+    <section class="viewer" aria-label="Просмотр документа">
+      <div class="viewer-bar">
+        <label for="doc-select">Документ</label>
+        <select id="doc-select"><option value="">Выберите документ</option></select>
+      </div>
+      <article id="document" class="document" tabindex="-1">
+        <p class="placeholder">Нажмите на источник под ответом или выберите документ из списка. Пункты, на которые ссылается ответ, будут выделены.</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

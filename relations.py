@@ -22,7 +22,7 @@ def _head(doc: Document) -> list[str]:
     return doc.text.split("\n", HEAD_LINES)[:HEAD_LINES]
 
 
-def _own_number(doc: Document) -> str | None:
+def own_number(doc: Document) -> str | None:
     match = OWN_NUMBER_RE.search(_head(doc)[0])
     return match.group(1) if match else None
 
@@ -47,7 +47,7 @@ def _edition_family(doc: Document) -> str | None:
 def link(documents: list[Document]) -> dict[str, list[str]]:
     """doc_id -> related doc_ids, symmetric."""
     company = [d for d in documents if d.kind == "company"]
-    by_number = {number: d.doc_id for d in company if (number := _own_number(d))}
+    by_number = {number: d.doc_id for d in company if (number := own_number(d))}
     families: dict[str, list[str]] = defaultdict(list)
     for doc in company:
         if family := _edition_family(doc):
