@@ -41,7 +41,6 @@ class Chunk:
 @dataclass
 class Document:
     doc_id: str
-    name: str
     title: str
     kind: str  # "law" | "company"
     text: str
@@ -82,11 +81,11 @@ def parse_document(name: str, text: str) -> Document:
     doc_id = hashlib.sha1(name.encode()).hexdigest()[:10]
     is_law = text.startswith("Источник:") and ARTICLE_RE.search(text.split("\n", 1)[0])
     if is_law:
-        doc = Document(doc_id, name, _law_title(text, name), "law", text)
+        doc = Document(doc_id, _law_title(text, name), "law", text)
         doc.chunks = _chunk(doc, _law_units(text, _article(text)))
         doc.outline = _outline(text)
     else:
-        doc = Document(doc_id, name, _file_title(name), "company", text)
+        doc = Document(doc_id, _file_title(name), "company", text)
         doc.chunks = _chunk(doc, _company_units(text))
     return doc
 
