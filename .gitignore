@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.env
+dist/
+submission.csv
+submission.tmp
+data/raw/kb/
+data/raw/sample/
+
+# Case brief is distributed to participants only
+*.pdf
