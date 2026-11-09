@@ -17,7 +17,8 @@ REFERENCE_RE = re.compile(
 FEDERAL_LAW_RE = re.compile(r"\b(\d+)-ФЗ\b")
 CODE_FIRST_RE = re.compile(r"\b([А-Я][А-Яа-я]{1,4}) РФ,?\s*(?:ст\.|стать\w+)\s*(\d+(?:\.\d+)*)")
 ARTICLE_FIRST_RE = re.compile(r"(?:\bст\.|\bстать\w+)\s*(\d+(?:\.\d+)*)\s+([А-Я][А-Яа-я]{1,4}) РФ\b")
-SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+# Sentence ends, except after reference abbreviations: "ТК РФ, ст. 70" is one sentence.
+SENTENCE_RE = re.compile(r"(?<!\bст\.)(?<!\bп\.)(?<!\bпп\.)(?<!\bч\.)(?<!\bабз\.)(?<=[.!?])\s+(?=[^\d\s])")
 
 
 def _normalize(text: str) -> str:
@@ -27,7 +28,8 @@ def _normalize(text: str) -> str:
 def _canonical(number: str) -> str:
     """'01.03.2025' and '1.03.2025' are the same date; '0,1' and '0.1' the same rate."""
     parts = number.replace(",", ".").split(".")
-    return ".".join(str(int(part)) for part in parts if part)
+    # lstrip instead of int(): no conversion limit on absurdly long digit runs.
+    return ".".join(part.lstrip("0") or "0" for part in parts if part)
 
 
 def _numbers(text: str) -> set[str]:

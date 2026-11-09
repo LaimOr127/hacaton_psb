@@ -34,3 +34,8 @@ def test_law_change_after_event_is_flagged():
     assert "изменена с 01.01.2026" in dates.law_change_note(point, dates.event_period("в 2024 году"))
     assert dates.law_change_note(point, dates.event_period("в 2026 году")) == ""
     assert dates.law_change_note(point, None) == ""
+
+
+def test_impossible_years_are_ignored():
+    assert dates.event_period("в январе 0000 года") is None
+    assert dates.event_period("в 0000 году") is None

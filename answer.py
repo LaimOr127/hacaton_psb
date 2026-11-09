@@ -38,7 +38,7 @@ def prepare(index: Index, question: str) -> tuple[list[Block], list[dict]]:
     return blocks, prompts.build_messages(blocks, turns, event)
 
 
-def answer(index: Index, question: str) -> Answer:
+def answer(index: Index, question: str, allow_retry: bool = True) -> Answer:
     blocks, messages = prepare(index, question)
     sources = messages[-1]["content"]
 
@@ -46,6 +46,8 @@ def answer(index: Index, question: str) -> Answer:
     violations = guard.check(reply, sources)
     if not violations:
         return Answer(reply, blocks)
+    if not allow_retry:
+        return Answer(guard.strip(reply, violations) or prompts.INSUFFICIENT, blocks, dropped=violations)
 
     retry = [
         *messages,

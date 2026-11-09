@@ -31,7 +31,7 @@ def _read(path):
 
 def test_answers_with_csv_special_characters_round_trip(workspace, monkeypatch):
     tricky = 'Плата — 450 000 рублей, "включая НДС"\n(п. 3.1).'
-    monkeypatch.setattr(solution, "answer", lambda index, q: type("A", (), {"text": tricky})())
+    monkeypatch.setattr(solution, "answer", lambda index, q, allow_retry=True: type("A", (), {"text": tricky})())
     solution.main()
     rows = _read(workspace / "submission.csv")
     assert [r["id"] for r in rows] == ["1", "2"]
@@ -39,7 +39,7 @@ def test_answers_with_csv_special_characters_round_trip(workspace, monkeypatch):
 
 
 def test_llm_failure_still_produces_full_file(workspace, monkeypatch):
-    def broken(index, question):
+    def broken(index, question, allow_retry=True):
         raise RuntimeError("proxy down")
 
     monkeypatch.setattr(solution, "answer", broken)
@@ -53,3 +53,16 @@ def test_duplicate_ids_are_answered_once(tmp_path):
     path = tmp_path / "q.csv"
     path.write_text('id,question\n1,"a"\n1,"b"\n2,"c"\n', encoding="utf-8")
     assert solution.load_questions(path) == [("1", "a"), ("2", "c")]
+
+
+def test_retry_is_disabled_near_the_time_budget(workspace, monkeypatch):
+    seen = []
+
+    def record(index, question, allow_retry=True):
+        seen.append(allow_retry)
+        return type("A", (), {"text": "ok"})()
+
+    monkeypatch.setattr(solution, "answer", record)
+    monkeypatch.setattr(config, "TIME_BUDGET_SECONDS", solution.RETRY_RESERVE_SECONDS)  # already inside the reserve
+    solution.main()
+    assert seen == [False, False]

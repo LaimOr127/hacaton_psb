@@ -56,6 +56,7 @@ def _render_block(number: int, block: Block, event: dates.Period | None) -> str:
         note = dates.edition_note(block.doc.text, event)
     else:
         note = dates.law_change_note(block.text, event)
+    header = document_text(header)  # titles come from file names and headings, also untrusted
     if note:
         header += f"\n{note}"
     return f"<документ>\n{header}\n{document_text(block.text)}\n</документ>"

@@ -44,6 +44,12 @@ def parse_date(text: str) -> date | None:
     return None
 
 
+def _month_period(year: int, month: int) -> Period | None:
+    if year < date.min.year:  # "в январе 0000 года" must not fail the question
+        return None
+    return date(year, month, 1), date(year, month, calendar.monthrange(year, month)[1])
+
+
 def event_period(text: str) -> Period | None:
     """The first date the question mentions, widened to a month or a year when vague."""
     candidates: list[tuple[int, Period]] = []
@@ -54,12 +60,12 @@ def event_period(text: str) -> Period | None:
         if day := parse_date(match.group()):
             candidates.append((match.start(), (day, day)))
     for match in MONTH_YEAR_RE.finditer(text):
-        year, month = int(match.group(2)), _month(match.group(1))
-        last = calendar.monthrange(year, month)[1]
-        candidates.append((match.start(), (date(year, month, 1), date(year, month, last))))
+        if period := _month_period(int(match.group(2)), _month(match.group(1))):
+            candidates.append((match.start(), period))
     for match in YEAR_RE.finditer(text):
         year = int(match.group(1))
-        candidates.append((match.start(), (date(year, 1, 1), date(year, 12, 31))))
+        if date.min.year <= year:
+            candidates.append((match.start(), (date(year, 1, 1), date(year, 12, 31))))
     # A day-precise date and its month/year overlap at the same position; prefer the narrowest.
     candidates.sort(key=lambda item: (item[0], item[1][1] - item[1][0]))
     return candidates[0][1] if candidates else None

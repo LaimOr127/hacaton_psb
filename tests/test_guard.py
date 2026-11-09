@@ -34,3 +34,14 @@ def test_strip_keeps_only_supported_sentences():
 
 def test_article_number_followed_by_law_number_is_not_one_number():
     assert guard.check("По ст. 9 152-ФЗ нужно согласие.", "Статья 9. Федеральный закон N 152-ФЗ") == []
+
+
+def test_strip_does_not_split_after_reference_abbreviations():
+    answer = "Оплата 30 дней (п. 4.2). Источник: ТК РФ, ст. 7. Остальное по договору."
+    violations = guard.check(answer, SOURCES)
+    assert violations == ["7", "ТК РФ, ст. 7"]
+    assert guard.strip(answer, violations) == "Оплата 30 дней (п. 4.2). Остальное по договору."
+
+
+def test_huge_digit_run_does_not_raise():
+    assert guard.check("9" * 5000, SOURCES) == ["9" * 5000]

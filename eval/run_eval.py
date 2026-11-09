@@ -73,8 +73,8 @@ def answer_metrics(index: Index, case: dict) -> dict:
     started = time.monotonic()
     try:
         result = answer(index, case["question"])
-    except llm.LLMError as exc:
-        return {"answer": "", "seconds": time.monotonic() - started, "score": None, "reason": str(exc)}
+    except Exception as exc:  # one broken case must not abort the run
+        return {"answer": "", "seconds": time.monotonic() - started, "score": None, "reason": type(exc).__name__}
     seconds = time.monotonic() - started
     score, reason = judge(case["question"], case["golden"], result.text)
     return {
